@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Farm Irrigation</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f3f4f6;
+            margin: 0;
+            padding: 30px;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: auto;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .valve {
+            background: white;
+            padding: 25px;
+            margin-top: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px #ccc;
+        }
+
+        .status {
+            font-size: 22px;
+            margin: 20px 0;
+        }
+
+        button {
+            padding: 12px 25px;
+            margin-right: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #message {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🌴 Farm Irrigation</h1>
+
+    <div class="valve">
+
+        <h2>Valve 1</h2>
+
+        <div class="status">
+            Status:
+            <strong id="state">OFF</strong>
+        </div>
+
+        <button onclick="setValve('on')">
+            TURN ON
+        </button>
+
+        <button onclick="setValve('off')">
+            TURN OFF
+        </button>
+
+        <div id="message"></div>
+
+    </div>
+
+</div>
+
+<script>
+
+const API_URL = "https://YOUR-BACKEND-URL";
+
+async function setValve(state) {
+
+    try {
+
+        const response = await fetch(
+            `${API_URL}/api/valves/1/${state}`,
+            {
+                method: "POST"
+            }
+        );
+
+        const data = await response.json();
+
+        document.getElementById("message").innerText =
+            "Command: " + data.command;
+
+    } catch (error) {
+
+        document.getElementById("message").innerText =
+            "Unable to contact backend";
+
+        console.error(error);
+    }
+}
+
+</script>
+
+</body>
+</html>
