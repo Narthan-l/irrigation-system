@@ -1,59 +1,96 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>Farm Irrigation</title>
 
     <style>
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            background: #f3f4f6;
             margin: 0;
-            padding: 30px;
+            font-family: Arial, sans-serif;
+            background: #f4f7f5;
+            color: #222;
+        }
+
+        header {
+            background: #1f6f43;
+            color: white;
+            padding: 20px;
+            text-align: center;
         }
 
         .container {
-            max-width: 700px;
-            margin: auto;
+            max-width: 800px;
+            margin: 30px auto;
+            padding: 0 20px;
         }
 
-        h1 {
-            text-align: center;
+        .gateway {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
 
         .valve {
             background: white;
-            padding: 25px;
-            margin-top: 25px;
+            padding: 20px;
             border-radius: 12px;
-            box-shadow: 0 2px 10px #ccc;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
 
         .status {
-            font-size: 22px;
-            margin: 20px 0;
+            font-size: 20px;
+            margin: 15px 0;
         }
 
         button {
-            padding: 12px 25px;
+            padding: 12px 24px;
             margin-right: 10px;
+            border: none;
+            border-radius: 8px;
             font-size: 16px;
             cursor: pointer;
         }
 
+        .on {
+            background: #2e8b57;
+            color: white;
+        }
+
+        .off {
+            background: #c0392b;
+            color: white;
+        }
+
         #message {
             margin-top: 20px;
+            font-weight: bold;
         }
     </style>
 </head>
 
 <body>
 
+<header>
+    <h1>🌴 Farm Irrigation</h1>
+</header>
+
 <div class="container">
 
-    <h1>🌴 Farm Irrigation</h1>
+    <div class="gateway">
+        <h2>Gateway</h2>
+        <div id="gatewayStatus">
+            Checking...
+        </div>
+    </div>
 
     <div class="valve">
 
@@ -61,14 +98,14 @@
 
         <div class="status">
             Status:
-            <strong id="state">OFF</strong>
+            <strong id="valveState">OFF</strong>
         </div>
 
-        <button onclick="setValve('on')">
+        <button class="on" onclick="setValve('on')">
             TURN ON
         </button>
 
-        <button onclick="setValve('off')">
+        <button class="off" onclick="setValve('off')">
             TURN OFF
         </button>
 
@@ -80,14 +117,45 @@
 
 <script>
 
-const API_URL = "https://YOUR-BACKEND-URL";
+const API_URL =
+    "https://irrigation-backend-2y1d.onrender.com";
+
+
+async function checkGateway() {
+
+    try {
+
+        const response = await fetch(API_URL + "/");
+
+        if (response.ok) {
+
+            document.getElementById("gatewayStatus").innerText =
+                "🟢 Backend Online";
+
+        } else {
+
+            document.getElementById("gatewayStatus").innerText =
+                "🔴 Backend Error";
+        }
+
+    } catch (error) {
+
+        document.getElementById("gatewayStatus").innerText =
+            "🔴 Backend Offline";
+
+    }
+}
+
 
 async function setValve(state) {
+
+    document.getElementById("message").innerText =
+        "Sending command...";
 
     try {
 
         const response = await fetch(
-            `${API_URL}/api/valves/1/${state}`,
+            API_URL + "/api/valves/1/" + state,
             {
                 method: "POST"
             }
@@ -95,8 +163,21 @@ async function setValve(state) {
 
         const data = await response.json();
 
-        document.getElementById("message").innerText =
-            "Command: " + data.command;
+        if (response.ok) {
+
+            document.getElementById("valveState").innerText =
+                state.toUpperCase();
+
+            document.getElementById("message").innerText =
+                "Command sent successfully: " +
+                data.command;
+
+        } else {
+
+            document.getElementById("message").innerText =
+                "Command failed";
+
+        }
 
     } catch (error) {
 
@@ -106,6 +187,9 @@ async function setValve(state) {
         console.error(error);
     }
 }
+
+
+checkGateway();
 
 </script>
 
