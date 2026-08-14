@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -31,28 +32,60 @@
             padding: 0 20px;
         }
 
-        .gateway {
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-
+        .gateway,
         .valve {
             background: white;
-            padding: 20px;
+            padding: 25px;
             border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
 
-        .status {
-            font-size: 20px;
-            margin: 15px 0;
+        .gateway-status {
+            font-size: 18px;
+        }
+
+        .valve-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .state {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 20px 0;
+        }
+
+        .state-open {
+            color: #198754;
+        }
+
+        .state-closed {
+            color: #dc3545;
+        }
+
+        .state-changing {
+            color: #d68910;
+        }
+
+        .state-unknown {
+            color: #6c757d;
+        }
+
+        .details {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
+        .details div {
+            margin: 8px 0;
         }
 
         button {
-            padding: 12px 24px;
+            padding: 12px 25px;
             margin-right: 10px;
             border: none;
             border-radius: 8px;
@@ -61,18 +94,31 @@
         }
 
         .on {
-            background: #2e8b57;
+            background: #198754;
             color: white;
         }
 
         .off {
-            background: #c0392b;
+            background: #dc3545;
             color: white;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
         #message {
             margin-top: 20px;
             font-weight: bold;
+        }
+
+        .refresh {
+            float: right;
+            background: #6c757d;
+            color: white;
+            padding: 8px 15px;
+            font-size: 14px;
         }
     </style>
 </head>
@@ -85,35 +131,94 @@
 
 <div class="container">
 
+    <!-- Gateway -->
+
     <div class="gateway">
+
+        <button class="refresh" onclick="loadStatus()">
+            Refresh
+        </button>
+
         <h2>Gateway</h2>
+
         <div id="gatewayStatus">
             Checking...
         </div>
+
     </div>
+
+
+    <!-- Valve -->
 
     <div class="valve">
 
-        <h2>Valve 1</h2>
-
-        <div class="status">
-            Status:
-            <strong id="valveState">OFF</strong>
+        <div class="valve-header">
+            <h2 id="valveName">
+                Valve 1
+            </h2>
         </div>
 
-        <button class="on" onclick="setValve('on')">
+        <div id="valveState" class="state state-unknown">
+            UNKNOWN
+        </div>
+
+        <button
+            id="onButton"
+            class="on"
+            onclick="setValve('on')">
+
             TURN ON
+
         </button>
 
-        <button class="off" onclick="setValve('off')">
+        <button
+            id="offButton"
+            class="off"
+            onclick="setValve('off')">
+
             TURN OFF
+
         </button>
+
 
         <div id="message"></div>
+
+
+        <!-- Database information -->
+
+        <div class="details">
+
+            <div>
+                <strong>Desired state:</strong>
+                <span id="desiredState">-</span>
+            </div>
+
+            <div>
+                <strong>Actual state:</strong>
+                <span id="actualState">-</span>
+            </div>
+
+            <div>
+                <strong>Last command:</strong>
+                <span id="lastCommand">-</span>
+            </div>
+
+            <div>
+                <strong>Last command time:</strong>
+                <span id="lastCommandTime">-</span>
+            </div>
+
+            <div>
+                <strong>Last update:</strong>
+                <span id="lastUpdateTime">-</span>
+            </div>
+
+        </div>
 
     </div>
 
 </div>
+
 
 <script>
 
@@ -121,77 +226,295 @@ const API_URL =
     "https://irrigation-backend-2y1d.onrender.com";
 
 
-async function checkGateway() {
+// ======================================================
+// Load valve status
+// ======================================================
+
+async function loadStatus() {
 
     try {
 
-        const response = await fetch(API_URL + "/");
+        const response =
+            await fetch(
+                API_URL + "/api/valves/1"
+            );
 
-        if (response.ok) {
+        if (!response.ok) {
 
-            document.getElementById("gatewayStatus").innerText =
-                "🟢 Backend Online";
-
-        } else {
-
-            document.getElementById("gatewayStatus").innerText =
-                "🔴 Backend Error";
+            throw new Error(
+                "HTTP " + response.status
+            );
         }
 
-    } catch (error) {
+        const valve =
+            await response.json();
 
-        document.getElementById("gatewayStatus").innerText =
-            "🔴 Backend Offline";
+
+        // Valve name
+
+        document.getElementById(
+            "valveName"
+        ).innerText = valve.name;
+
+
+        // Actual state
+
+        const stateElement =
+            document.getElementById(
+                "valveState"
+            );
+
+        stateElement.innerText =
+            valve.actual_state;
+
+
+        // Remove previous classes
+
+        stateElement.className =
+            "state";
+
+
+        // Add appropriate state class
+
+        if (valve.actual_state === "OPEN") {
+
+            stateElement.classList.add(
+                "state-open"
+            );
+
+        }
+        else if (
+            valve.actual_state === "CLOSED"
+        ) {
+
+            stateElement.classList.add(
+                "state-closed"
+            );
+
+        }
+        else if (
+            valve.actual_state === "OPENING" ||
+            valve.actual_state === "CLOSING"
+        ) {
+
+            stateElement.classList.add(
+                "state-changing"
+            );
+
+        }
+        else {
+
+            stateElement.classList.add(
+                "state-unknown"
+            );
+        }
+
+
+        // Database information
+
+        document.getElementById(
+            "desiredState"
+        ).innerText =
+            valve.desired_state;
+
+
+        document.getElementById(
+            "actualState"
+        ).innerText =
+            valve.actual_state;
+
+
+        document.getElementById(
+            "lastCommand"
+        ).innerText =
+            valve.last_command || "-";
+
+
+        document.getElementById(
+            "lastCommandTime"
+        ).innerText =
+            formatTime(
+                valve.last_command_time
+            );
+
+
+        document.getElementById(
+            "lastUpdateTime"
+        ).innerText =
+            formatTime(
+                valve.last_update_time
+            );
+
+
+        // Gateway
+
+        await loadGatewayStatus();
 
     }
-}
-
-
-async function setValve(state) {
-
-    document.getElementById("message").innerText =
-        "Sending command...";
-
-    try {
-
-        const response = await fetch(
-            API_URL + "/api/valves/1/" + state,
-            {
-                method: "POST"
-            }
-        );
-
-        const data = await response.json();
-
-        if (response.ok) {
-
-            document.getElementById("valveState").innerText =
-                state.toUpperCase();
-
-            document.getElementById("message").innerText =
-                "Command sent successfully: " +
-                data.command;
-
-        } else {
-
-            document.getElementById("message").innerText =
-                "Command failed";
-
-        }
-
-    } catch (error) {
-
-        document.getElementById("message").innerText =
-            "Unable to contact backend";
+    catch (error) {
 
         console.error(error);
+
+        document.getElementById(
+            "gatewayStatus"
+        ).innerText =
+            "🔴 Unable to contact backend";
+
     }
 }
 
 
-checkGateway();
+// ======================================================
+// Gateway status
+// ======================================================
+
+async function loadGatewayStatus() {
+
+    try {
+
+        const response =
+            await fetch(
+                API_URL +
+                "/api/gateway/status"
+            );
+
+        const gateway =
+            await response.json();
+
+
+        if (gateway.status === "ONLINE") {
+
+            document.getElementById(
+                "gatewayStatus"
+            ).innerText =
+                "🟢 Gateway Online";
+
+        }
+        else {
+
+            document.getElementById(
+                "gatewayStatus"
+            ).innerText =
+                "🔴 Gateway Offline";
+
+        }
+
+    }
+    catch (error) {
+
+        document.getElementById(
+            "gatewayStatus"
+        ).innerText =
+            "⚪ Gateway Unknown";
+    }
+}
+
+
+// ======================================================
+// Turn valve ON / OFF
+// ======================================================
+
+async function setValve(command) {
+
+    document.getElementById(
+        "message"
+    ).innerText =
+        "Sending command...";
+
+
+    try {
+
+        const response =
+            await fetch(
+                API_URL +
+                "/api/valves/1/" +
+                command,
+                {
+                    method: "POST"
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.detail ||
+                "Command failed"
+            );
+        }
+
+
+        document.getElementById(
+            "message"
+        ).innerText =
+            "Command sent successfully.";
+
+
+        // Immediately reload database state
+
+        await loadStatus();
+
+    }
+    catch (error) {
+
+        console.error(error);
+
+        document.getElementById(
+            "message"
+        ).innerText =
+            "❌ " + error.message;
+
+    }
+}
+
+
+// ======================================================
+// Format date/time
+// ======================================================
+
+function formatTime(value) {
+
+    if (!value) {
+
+        return "-";
+    }
+
+    try {
+
+        return new Date(
+            value
+        ).toLocaleString();
+
+    }
+    catch {
+
+        return value;
+    }
+}
+
+
+// ======================================================
+// Initial load
+// ======================================================
+
+loadStatus();
+
+
+// ======================================================
+// Automatically refresh every 5 seconds
+// ======================================================
+
+setInterval(
+    loadStatus,
+    5000
+);
 
 </script>
 
 </body>
+
 </html>
