@@ -19,6 +19,8 @@ app.add_middleware(
 
 DB_PATH = Path(__file__).resolve().parent / "irrigation.db"
 
+GATEWAY_TIMEOUT_SECONDS = 15
+
 
 def get_db():
     connection = sqlite3.connect(DB_PATH)
@@ -30,7 +32,35 @@ def current_time():
     return datetime.now(timezone.utc).isoformat()
 
 
+def parse_time(value):
+    if not value:
+        return None
+
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def gateway_is_online(last_seen):
+    if not last_seen:
+        return False
+
+    last_seen_time = parse_time(last_seen)
+
+    if last_seen_time is None:
+        return False
+
+    elapsed = (
+        datetime.now(timezone.utc) -
+        last_seen_time
+    ).total_seconds()
+
+    return elapsed <= GATEWAY_TIMEOUT_SECONDS
+
+
 def initialize_database():
+
     connection = get_db()
 
     connection.execute(
@@ -58,7 +88,6 @@ def initialize_database():
         """
     )
 
-    # Create Valve 1 if it does not exist.
     connection.execute(
         """
         INSERT OR IGNORE INTO valves
@@ -85,7 +114,6 @@ def initialize_database():
         (current_time(),),
     )
 
-    # Create gateway record if it does not exist.
     connection.execute(
         """
         INSERT OR IGNORE INTO gateway
@@ -118,6 +146,7 @@ initialize_database()
 
 @app.get("/")
 def root():
+
     return {
         "status": "online",
         "service": "Farm Irrigation API"
@@ -125,13 +154,100 @@ def root():
 
 
 # ============================================================
-# Get valve status
+# Get gateway information
+# ============================================================
+
+def get_gateway_info(connection):
+
+    gateway = connection.execute(
+        """
+        SELECT
+            status,
+            last_seen,
+            restart_count
+        FROM gateway
+        WHERE id = 1
+        """
+    ).fetchone()
+
+    if gateway is None:
+        return {
+            "status": "OFFLINE",
+            "last_seen": None,
+            "restart_count": 0
+        }
+
+    online = gateway_is_online(
+        gateway["last_seen"]
+    )
+
+    status = (
+        "ONLINE"
+        if online
+        else "OFFLINE"
+    )
+
+    # Keep database status synchronized.
+    connection.execute(
+        """
+        UPDATE gateway
+        SET status = ?
+        WHERE id = 1
+        """,
+        (status,),
+    )
+
+    return {
+        "status": status,
+        "last_seen": gateway["last_seen"],
+        "restart_count": gateway["restart_count"]
+    }
+
+
+# ============================================================
+# Get all valves
 # ============================================================
 
 @app.get("/api/valves")
 def get_valves():
+
     connection = get_db()
 
+    gateway = get_gateway_info(connection)
+
+    rows = connection.execute(
+        """
+        SELECT
+            id,
+            name,
+            desired_state,
+            actual_state,
+            last_command,
+            last_command_time,
+            last_update_time
+        FROM valves
+        ORDER BY id
+        """
+    ).fetchall()
+
+    # If gateway is offline, physical state cannot
+    # be confirmed.
+    if gateway["status"] == "OFFLINE":
+
+        for row in rows:
+
+            connection.execute(
+                """
+                UPDATE valves
+                SET actual_state = 'UNKNOWN'
+                WHERE id = ?
+                """,
+                (row["id"],),
+            )
+
+    connection.commit()
+
+    # Read again after possible updates.
     rows = connection.execute(
         """
         SELECT
@@ -150,6 +266,7 @@ def get_valves():
     connection.close()
 
     return {
+        "gateway": gateway,
         "valves": [dict(row) for row in rows]
     }
 
@@ -160,7 +277,10 @@ def get_valves():
 
 @app.get("/api/valves/{valve_id}")
 def get_valve(valve_id: int):
+
     connection = get_db()
+
+    gateway = get_gateway_info(connection)
 
     row = connection.execute(
         """
@@ -178,15 +298,47 @@ def get_valve(valve_id: int):
         (valve_id,),
     ).fetchone()
 
-    connection.close()
-
     if row is None:
+
+        connection.close()
+
         raise HTTPException(
             status_code=404,
             detail="Valve not found"
         )
 
-    return dict(row)
+    actual_state = row["actual_state"]
+
+    if gateway["status"] == "OFFLINE":
+
+        actual_state = "UNKNOWN"
+
+        connection.execute(
+            """
+            UPDATE valves
+            SET actual_state = 'UNKNOWN'
+            WHERE id = ?
+            """,
+            (valve_id,),
+        )
+
+        connection.commit()
+
+    connection.close()
+
+    result = dict(row)
+
+    result["actual_state"] = actual_state
+
+    result["gateway_status"] = (
+        gateway["status"]
+    )
+
+    result["gateway_last_seen"] = (
+        gateway["last_seen"]
+    )
+
+    return result
 
 
 # ============================================================
@@ -195,6 +347,7 @@ def get_valve(valve_id: int):
 
 @app.post("/api/valves/{valve_id}/on")
 def valve_on(valve_id: int):
+
     connection = get_db()
 
     valve = connection.execute(
@@ -203,6 +356,7 @@ def valve_on(valve_id: int):
     ).fetchone()
 
     if valve is None:
+
         connection.close()
 
         raise HTTPException(
@@ -223,7 +377,11 @@ def valve_on(valve_id: int):
             last_update_time = ?
         WHERE id = ?
         """,
-        (now, now, valve_id),
+        (
+            now,
+            now,
+            valve_id
+        ),
     )
 
     connection.commit()
@@ -244,6 +402,7 @@ def valve_on(valve_id: int):
 
 @app.post("/api/valves/{valve_id}/off")
 def valve_off(valve_id: int):
+
     connection = get_db()
 
     valve = connection.execute(
@@ -252,6 +411,7 @@ def valve_off(valve_id: int):
     ).fetchone()
 
     if valve is None:
+
         connection.close()
 
         raise HTTPException(
@@ -272,7 +432,11 @@ def valve_off(valve_id: int):
             last_update_time = ?
         WHERE id = ?
         """,
-        (now, now, valve_id),
+        (
+            now,
+            now,
+            valve_id
+        ),
     )
 
     connection.commit()
@@ -293,11 +457,12 @@ def valve_off(valve_id: int):
 
 @app.get("/api/gateway/command")
 def gateway_command():
+
     connection = get_db()
 
-    # Mark gateway as online.
     now = current_time()
 
+    # Gateway heartbeat.
     connection.execute(
         """
         UPDATE gateway
@@ -309,7 +474,8 @@ def gateway_command():
         (now,),
     )
 
-    # Find a valve where desired state differs from actual state.
+    # Find a command where desired state differs
+    # from the last confirmed actual state.
     row = connection.execute(
         """
         SELECT
@@ -328,17 +494,16 @@ def gateway_command():
     connection.close()
 
     if row is None:
+
         return {
             "command": None
         }
 
-    command = {
-        "valve_id": row["id"],
-        "command": row["last_command"]
-    }
-
     return {
-        "command": command
+        "command": {
+            "valve_id": row["id"],
+            "command": row["last_command"]
+        }
     }
 
 
@@ -351,9 +516,11 @@ def gateway_ack(
     valve_id: int,
     command: str
 ):
+
     command = command.upper()
 
     if command not in ("ON", "OFF"):
+
         raise HTTPException(
             status_code=400,
             detail="Command must be ON or OFF"
@@ -367,6 +534,7 @@ def gateway_ack(
     ).fetchone()
 
     if valve is None:
+
         connection.close()
 
         raise HTTPException(
@@ -393,7 +561,7 @@ def gateway_ack(
         (
             actual_state,
             now,
-            valve_id,
+            valve_id
         ),
     )
 
@@ -424,19 +592,14 @@ def gateway_ack(
 
 @app.get("/api/gateway/status")
 def gateway_status():
+
     connection = get_db()
 
-    row = connection.execute(
-        """
-        SELECT
-            status,
-            last_seen,
-            restart_count
-        FROM gateway
-        WHERE id = 1
-        """
-    ).fetchone()
+    gateway = get_gateway_info(
+        connection
+    )
 
+    connection.commit()
     connection.close()
 
-    return dict(row)
+    return gateway
